@@ -1,0 +1,16 @@
+# LawTech - production compose
+# Runs the REST API + SPA. SQLite DB persists on a named volume.
+version: "3.9"
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env
+    volumes:
+      - lawtech-data:/srv/lawtech/data
+    restart: unless-stopped
+
+volumes:
+  lawtech-data:
