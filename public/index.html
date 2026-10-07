@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LawTech - Case Management & Knowledgebase</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <i class="fas fa-scale-balanced"></i>
+          <span>LawTech</span>
+        </div>
+        <button class="close-btn" id="closeSidebar">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" data-view="dashboard" class="nav-item active">
+          <i class="fas fa-home"></i>
+          <span>Dashboard</span>
+        </a>
+        <a href="#" data-view="clients" class="nav-item">
+          <i class="fas fa-users"></i>
+          <span>Clients</span>
+          <span class="badge" id="clientCount">0</span>
+        </a>
+        <a href="#" data-view="cases" class="nav-item">
+          <i class="fas fa-file-alt"></i>
+          <span>Cases</span>
+          <span class="badge" id="caseCount">0</span>
+        </a>
+        <a href="#" data-view="matters" class="nav-item">
+          <i class="fas fa-book-open"></i>
+          <span>Matters</span>
+        </a>
+        <a href="#" data-view="knowledgebase" class="nav-item">
+          <i class="fas fa-book"></i>
+          <span>Knowledgebase</span>
+          <span class="badge" id="articleCount">0</span>
+        </a>
+        <a href="#" data-view="documents" class="nav-item">
+          <i class="fas fa-folder"></i>
+          <span>Documents</span>
+        </a>
+        <div class="nav-section">
+          <h3>AI Studio</h3>
+        </div>
+        <a href="#" data-view="chat" class="nav-item active">
+          <i class="fas fa-comments"></i>
+          <span>Chat</span>
+        </a>
+        <a href="#" data-view="scribe" class="nav-item">
+          <i class="fas fa-microphone"></i>
+          <span>Scribe</span>
+        </a>
+        <a href="#" data-view="translation" class="nav-item">
+          <i class="fas fa-globe"></i>
+          <span>Translation</span>
+        </a>
+        <a href="#" data-view="composer" class="nav-item">
+          <i class="fas fa-pen"></i>
+          <span>Composer</span>
+        </a>
+        <div class="nav-section">
+          <h3>Analysis</h3>
+        </div>
+        <a href="#" data-view="review" class="nav-item">
+          <i class="fas fa-search"></i>
+          <span>Review</span>
+        </a>
+        <a href="#" data-view="workstudio" class="nav-item">
+          <i class="fas fa-book-reader"></i>
+          <span>Workstudio</span>
+        </a>
+        <a href="#" data-view="comparison" class="nav-item">
+          <i class="fas fa-compare"></i>
+          <span>Comparison</span>
+        </a>
+        <a href="#" data-view="sidebar" class="nav-item">
+          <i class="fas fa-columns"></i>
+          <span>Side by Side</span>
+        </a>
+        <div class="nav-section">
+          <h3>Support</h3>
+        </div>
+        <a href="#" data-view="help" class="nav-item">
+          <i class="fas fa-question-circle"></i>
+          <span>User Guide</span>
+        </a>
+        <a href="#" data-view="contact" class="nav-item">
+          <i class="fas fa-envelope"></i>
+          <span>Contact Us</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="avatar" id="userAvatar">
+            <i class="fas fa-user"></i>
+          </div>
+          <div class="user-details">
+            <span class="user-name" id="userName">Lawyer</span>
+            <span class="user-role" id="userRole">Administrator</span>
+          </div>
+        </div>
+        <button class="logout-btn" id="logoutBtn">
+          <i class="fas fa-sign-out-alt"></i>
+          <span>Logout</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content" id="mainContent">
+      <!-- Top Bar -->
+      <header class="top-bar">
+        <button class="menu-btn" id="menuBtn">
+          <i class="fas fa-bars"></i>
+        </button>
+        <div class="top-bar-search">
+          <i class="fas fa-search"></i>
+          <input type="text" id="globalSearch" placeholder="Search clients, cases, matters, documents...">
+        </div>
+        <div class="top-bar-actions">
+          <button class="icon-btn" id="notificationsBtn">
+            <i class="fas fa-bell"></i>
+            <span class="badge">3</span>
+          </button>
+          <button class="icon-btn" id="helpBtn">
+            <i class="fas fa-question-circle"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Dashboard View -->
+      <section class="view active" id="view-dashboard">
+        <div class="view-header">
+          <h1>Dashboard</h1>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="newClientBtn">
+              <i class="fas fa-user-plus"></i>
+              New Client
+            </button>
+            <button class="btn btn-secondary" id="newCaseBtn">
+              <i class="fas fa-plus"></i>
+              New Case
+            </button>
+          </div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon">
+              <i class="fas fa-users"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-value" id="statClients">0</span>
+              <span class="stat-label">Total Clients</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">
+              <i class="fas fa-file-alt"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-value" id="statCases">0</span>
+              <span class="stat-label">Active Cases</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">
+              <i class="fas fa-book"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-value" id="statArticles">0</span>
+              <span class="stat-label">Knowledgebase Articles</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">
+              <i class="fas fa-folder"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-value" id="statDocuments">0</span>
+              <span class="stat-label">Uploaded Documents</span>
+            </div>
+          </div>
+        </div>
+        <div class="dashboard-grid">
+          <div class="card">
+            <h2>Recent Clients</h2>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Company</th>
+                    <th>Contact</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="recentClients">
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Active Cases</h2>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Client</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="activeCases">
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Clients View -->
+      <section class="view" id="view-clients">
+        <div class="view-header">
+          <h1>Clients</h1>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="newClientViewBtn">
+              <i class="fas fa-user-plus"></i>
+              New Client
+            </button>
+            <div class="search-box">
+              <i class="fas fa-search"></i>
+              <input type="text" id="clientSearch" placeholder="Search clients...">
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Company</th>
+                  <th>Contact</th>
+                  <th>Tier</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="clientsTable">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Cases View -->
+      <section class="view" id="view-cases">
+        <div class="view-header">
+          <h1>Cases</h1>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="newCaseViewBtn">
+              <i class="fas fa-plus"></i>
+              New Case
+            </button>
+            <div class="search-box">
+              <i class="fas fa-search"></i>
+              <input type="text" id="caseSearch" placeholder="Search cases...">
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Client</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Priority</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="casesTable">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Matters View -->
+      <section class="view" id="view-matters">
+        <div class="view-header">
+          <h1>Matters</h1>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="newMatterBtn">
+              <i class="fas fa-plus"></i>
+              New Matter
+            </button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Client</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Priority</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="mattersTable">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Knowledgebase View -->
+      <section class="view" id="view-knowledgebase">
+        <div class="view-header">
+          <h1>Knowledgebase</h1>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="newArticleBtn">
+              <i class="fas fa-plus"></i>
+              New Article
+            </button>
+            <div class="category-filter">
+              <select id="articleCategory">
+                <option value="">All Categories</option>
+                <option value="litigation">Litigation</option>
+                <option value="corporate">Corporate</option>
+                <option value="commercial">Commercial</option>
+                <option value="family">Family</option>
+                <option value="conveyancing">Conveyancing</option>
+                <option value="criminal">Criminal</option>
+                <option value="practice">Practice Management</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Category</th>
+                  <th>Author</th>
+                  <th>Views</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="articlesTable">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Documents View -->
+      <section class="view" id="view-documents">
+        <div class="view-header">
+          <h1>Documents</h1>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="uploadDocBtn">
+              <i class="fas fa-upload"></i>
+              Upload
+            </button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Type</th>
+                  <th>Client</th>
+                  <th>Size</th>
+                  <th>Uploaded</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="documentsTable">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chat View -->
+      <section class="view" id="view-chat">
+        <div class="view-header">
+          <h1>AI Chat</h1>
+          <div class="view-actions">
+            <button class="btn btn-secondary" id="themeToggle">
+              <i class="fas fa-moon"></i>
+              Dark
+            </button>
+          </div>
+        </div>
+        <div class="chat-container">
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-message bot">
+              <div class="message-avatar"><i class="fas fa-robot"></i></div>
+              <div class="message-content">
+                <p>Welcome to LawTech AI Chat. Ask me about clients, cases, or knowledgebase articles.</p>
+              </div>
+            </div>
+          </div>
+          <div class="chat-input-area">
+            <div class="chat-input-wrapper">
+              <textarea id="chatInput" placeholder="Type your message..." rows="1"></textarea>
+              <button class="send-btn" id="sendMessageBtn">
+                <i class="fas fa-paper-plane"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Composer View -->
+      <section class="view" id="view-composer">
+        <div class="view-header">
+          <h1>Composer</h1>
+          <div class="view-actions">
+            <button class="btn btn-secondary" id="composerCancelBtn">
+              <i class="fas fa-times"></i>
+              Cancel
+            </button>
+            <button class="btn btn-primary" id="composerSaveBtn">
+              <i class="fas fa-check"></i>
+              Save
+            </button>
+          </div>
+        </div>
+        <div class="card composer-card">
+          <div class="composer-editor">
+            <div class="editor-toolbar">
+              <button class="toolbar-btn" id="boldBtn"><i class="fas fa-bold"></i></button>
+              <button class="toolbar-btn" id="italicBtn"><i class="fas fa-italic"></i></button>
+              <button class="toolbar-btn" id="bulletListBtn"><i class="fas fa-list-ul"></i></button>
+              <button class="toolbar-btn" id="numberListBtn"><i class="fas fa-list-ol"></i></button>
+              <div class="toolbar-divider"></div>
+              <button class="toolbar-btn" id="headingBtn"><i class="fas fa-heading"></i> Heading</button>
+              <button class="toolbar-btn" id="paragraphBtn"><i class="fas fa-paragraph"></i> Paragraph</button>
+            </div>
+            <div id="composerEditor" class="editor-content"></div>
+            <div class="editor-toolbar">
+              <input type="text" id="fileTitle" placeholder="Document title..." class="toolbar-input">
+              <button class="toolbar-btn" id="addAttachmentBtn">
+                <i class="fas fa-paperclip"></i>
+                Attach
+              </button>
+              <button class="toolbar-btn" id="insertTemplateBtn">
+                <i class="fas fa-file-alt"></i>
+                Template
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scribe View -->
+      <section class="view" id="view-scribe">
+        <div class="view-header">
+          <h1>Scribe</h1>
+        </div>
+        <div class="card scribe-card">
+          <div class="scribe-input">
+            <textarea id="scribeInput" placeholder="Click the mic and start speaking..." rows="6"></textarea>
+            <button class="mic-btn" id="startRecording">
+              <i class="fas fa-microphone"></i>
+              Start
+            </button>
+            <button class="mic-btn" id="stopRecording" disabled>
+              <i class="fas fa-stop"></i>
+              Stop
+            </button>
+          </div>
+          <div class="scribe-output" id="scribeOutput">
+            <pre id="transcript"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Help View -->
+      <section class="view" id="view-help">
+        <div class="view-header">
+          <h1>User Guide</h1>
+        </div>
+        <div class="card">
+          <div class="guide-content">
+            <h2 id="helpTitle">Getting Started</h2>
+            <div class="help-section">
+              <h3>Dashboard</h3>
+              <p>The dashboard provides an overview of your practice. Use the stats cards to see quickly how many clients, cases, and documents you have. Recent items are displayed below the stats.</p>
+            </div>
+            <div class="help-section">
+              <h3>Clients</h3>
+              <p>Register clients here. You can add contact information, company details, industry, and notes. Click on any client to open their detail view.</p>
+            </div>
+            <div class="help-section">
+              <h3>Cases & Matters</h3>
+              <p>Cases are specific legal proceedings. Matters are broader engagements. Associate cases with clients to track relationships.</p>
+            </div>
+            <div class="help-section">
+              <h3>Knowledgebase</h3>
+              <p>Build a searchable library of legal knowledge articles, templates, and precedents. Share with your team for consistent practice.</p>
+            </div>
+            <div class="help-section">
+              <h3>Documents</h3>
+              <p>Upload and manage case documents. Version control is available for tracked documents.</p>
+            </div>
+            <div class="help-section">
+              <h3>AI Chat</h3>
+              <p>Ask the AI assistant questions about your clients, cases, or search the knowledgebase. The AI has access to your data to provide context.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Contact View -->
+      <section class="view" id="view-contact">
+        <div class="view-header">
+          <h1>Contact Us</h1>
+        </div>
+        <div class="card">
+          <div class="contact-content">
+            <div class="contact-info">
+              <h3>Legal Help</h3>
+              <div class="contact-item">
+                <i class="fas fa-envelope"></i>
+                <span>support@lawtech.com</span>
+              </div>
+              <div class="contact-item">
+                <i class="fas fa-phone"></i>
+                <span>+61 2 1234 5678</span>
+              </div>
+              <div class="contact-item">
+                <i class="fas fa-map-marker-alt"></i>
+                <span>Level 12, 108 Queen Street<br>Melbourne, VIC 3000</span>
+              </div>
+            </div>
+            <form class="contact-form" id="contactForm">
+              <div class="form-group">
+                <label for="contactName">Name</label>
+                <input type="text" id="contactName" required>
+              </div>
+              <div class="form-group">
+                <label for="contactEmail">Email</label>
+                <input type="email" id="contactEmail" required>
+              </div>
+              <div class="form-group">
+                <label for="contactSubject">Subject</label>
+                <input type="text" id="contactSubject">
+              </div>
+              <div class="form-group">
+                <label for="contactMessage">Message</label>
+                <textarea id="contactMessage" rows="5" required></textarea>
+              </div>
+              <button type="submit" class="btn btn-primary">
+                <i class="fas fa-paper-plane"></i>
+                Send Message
+              </button>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
