@@ -41,6 +41,25 @@ The database is seeded on first startup with a demo admin account:
 | POST | `/api/auth/register` | Register a new user |
 | POST | `/api/auth/login` | Log in and return a JWT |
 
+## Production / Docker
+
+A `Dockerfile` is included for running the app in a container. It bakes the
+native `better-sqlite3` module against the Node version you tag the image on,
+runs as a non-root `node` user, and ships the DB runtime dir for persistence.
+
+```bash
+# Build
+docker build -t lawtech .
+
+# Run (default admin credentials, override with env vars)
+docker run -d --name lawtech -p 3000:3000 \
+  -e ADMIN_EMAIL=admin@lawtech.com \
+  -e ADMIN_PASSWORD=admin123 \
+  lawtech
+```
+
+See the `Dockerfile` for the full environment variable table.
+
 ## Tech stack
 
 - Node.js >= 18
