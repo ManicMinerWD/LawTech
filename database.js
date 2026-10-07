@@ -1,232 +1,47 @@
-// LawTech Database Module
-// SQLite database for case management and knowledgebase system
+// LawTech - Supabase Postgres Database Module
+// Replaces better-sqlite3 so the app persists to a real managed Postgres
+// database in production. No better-sqlite3 needed; no secrets shipped.
+//
+// Env (from .env):
+//   SUPABASE_URL      https://<project>.supabase.co
+//   SUPABASE_ANON_KEY sb_pub... (anon/publishable key, apiKeys scope)
+//   JWT_SECRET        (your own signing secret for LawTech sessions)
+//   ADMIN_EMAIL       initial admin email
+//   ADMIN_PASSWORD    initial admin password
 
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
-const DB_PATH = path.join(__dirname, 'lawtech.db');
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const JWT_SECRET = process.env.JWT_SECRET || 'lawtech-secret-key';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@lawtech.com';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const ADMIN_NAME = process.env.ADMIN_NAME || 'Admin User';
+const ADMIN_ROLE = 'admin';
 
-if (!fs.existsSync(__dirname)) {
-  fs.mkdirSync(__dirname, { recursive: true });
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error(
+    'LawTech is not configured for Supabase. Set SUPABASE_URL and ' +
+    'SUPABASE_ANON_KEY in .env.'
+  );
 }
 
-let db;
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+});
 
-function init() {
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-
-  // Create all tables
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      name TEXT NOT NULL,
-      role TEXT DEFAULT 'lawyer',
-      phone TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS clients (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT,
-      phone TEXT,
-      company TEXT,
-      address TEXT,
-      city TEXT,
-      state TEXT,
-      zip_code TEXT,
-      country TEXT DEFAULT 'Australia',
-      website TEXT,
-      industry TEXT,
-      contact_person TEXT,
-      tier TEXT DEFAULT 'standard',
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS cases (
-      id TEXT PRIMARY KEY,
-      client_id TEXT NOT NULL,
-      matter_id TEXT,
-      title TEXT NOT NULL,
-      case_type TEXT,
-      description TEXT,
-      status TEXT DEFAULT 'open',
-      priority TEXT DEFAULT 'normal',
-      filing_date DATE,
-      due_date DATE,
-      estimated_cost REAL,
-      actual_cost REAL,
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (client_id) REFERENCES clients(id),
-      FOREIGN KEY (matter_id) REFERENCES matters(id)
-    )
-  `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS matters (
-      id TEXT PRIMARY KEY,
-      client_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      matter_type TEXT,
-      description TEXT,
-      status TEXT DEFAULT 'open',
-      priority TEXT DEFAULT 'normal',
-      filing_date DATE,
-      target_resolution DATE,
-      estimated_cost REAL,
-      actual_cost REAL,
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (client_id) REFERENCES clients(id)
-    )
-  `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS articles (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      category TEXT,
-      content TEXT NOT NULL,
-      tags TEXT,
-      author_id TEXT,
-      views INTEGER DEFAULT 0,
-      status TEXT DEFAULT 'published',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (author_id) REFERENCES users(id)
-    )
-  `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS documents (
-      id TEXT PRIMARY KEY,
-      client_id TEXT,
-      matter_id TEXT,
-      title TEXT NOT NULL,
-      document_type TEXT,
-      file_path TEXT,
-      file_name TEXT,
-      file_size INTEGER,
-      mime_type TEXT,
-      uploaded_by TEXT,
-      uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      status TEXT DEFAULT 'active',
-      FOREIGN KEY (client_id) REFERENCES clients(id),
-      FOREIGN KEY (matter_id) REFERENCES matters(id)
-    )
-  `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS document_versions (
-      id TEXT PRIMARY KEY,
-      document_id TEXT NOT NULL,
-      version_number INTEGER DEFAULT 1,
-      content TEXT,
-      file_path TEXT,
-      file_name TEXT,
-      file_size INTEGER,
-      mime_type TEXT,
-      changed_by TEXT,
-      changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (document_id) REFERENCES documents(id)
-    )
-  `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS audit_log (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      action TEXT NOT NULL,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT NOT NULL,
-      old_values TEXT,
-      new_values TEXT,
-      ip_address TEXT,
-      user_agent TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      token TEXT UNIQUE NOT NULL,
-      expires_at DATETIME NOT NULL,
-      ip_address TEXT,
-      user_agent TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Seed initial data
-  seedData();
-}
-
-function seedData() {
-  const stmt = db.prepare('SELECT COUNT(*) as count FROM users');
-  const existing = stmt.get();
-  if (existing.count > 0) return;
-
-  // Create default admin user
-  const adminId = generateId();
-  const adminHash = hashPassword('admin123');
-  db.prepare('INSERT INTO users (id, email, password_hash, name, role, phone) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(adminId, 'admin@lawtech.com', adminHash, 'Admin User', 'admin', '0400 000 000');
-
-  // Insert demo client
-  const clientId = generateId();
-  db.prepare('INSERT INTO clients (id, name, email, phone, company, address, city, state, zip_code, country, website, industry, contact_person, tier, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(clientId, 'Sarah Johnson', 'sarah@example.com', '+61 400 000 001', 'Globex Inc', '108 Queen Street', 'Melbourne', 'VIC', '3000', 'Australia', 'https://globex.com', 'Finance', 'Robert Johnson', 'standard', '');
-
-  // Insert demo case
-  const caseId = generateId();
-  db.prepare('INSERT INTO cases (id, client_id, title, case_type, description, status, priority, filing_date, due_date, estimated_cost, actual_cost, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(caseId, clientId, 'Johnson Asset Acquisition', 'M&A', 'Acquisition of portfolio assets across multiple sectors.', 'in_progress', 'high', '2026-03-01', '2026-12-01', 200000, null, '');
-
-  // Insert demo matter
-  const matterId = generateId();
-  db.prepare('INSERT INTO matters (id, client_id, title, matter_type, description, status, priority, filing_date, target_resolution, estimated_cost, actual_cost, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(matterId, clientId, 'Portfolio Acquisition', 'M&A', 'Portfolio acquisition across multiple sectors and jurisdictions.', 'in_progress', 'high', '2026-03-01', '2026-12-01', 350000, null, '');
-
-  // Insert demo article
-  const articleId = generateId();
-  db.prepare('INSERT INTO articles (id, title, category, content, tags, author_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(articleId, 'M&A Due Diligence Checklist', 'corporate', 'Standard checklist for M&A due diligence preparation covering financial, legal, and operational aspects. Key areas include: 1) Financial due diligence - review of financial statements, tax records, and forecasts. 2) Legal due diligence - contracts, IP, litigation, employment matters. 3) Commercial due diligence - market analysis, customer concentration, and product viability.', 'M&A, due diligence, checklist, corporate, finance', adminId, 'published');
-
-  // Insert demo document
-  const docId = generateId();
-  db.prepare('INSERT INTO documents (id, client_id, title, document_type, file_path, file_name, file_size, mime_type, uploaded_by, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(docId, clientId, 'NDA Template', 'Template', '/docs/nda.pdf', 'nda-template.pdf', 245760, 'application/pdf', adminId, 'active');
-}
-
-function getDB() {
-  if (!db) {
-    init();
-  }
-  return db;
-}
-
+// UUID v4
 function generateId() {
-  return require('uuid').v4();
+  return crypto.randomUUID();
 }
 
+// bcrypt sync hashing (managed separately, not a DB write)
 function hashPassword(password) {
   return bcrypt.hashSync(password, 12);
 }
@@ -236,103 +51,111 @@ function verifyPassword(password, hash) {
 }
 
 function generateToken(userId) {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET || 'lawtech-secret-key', {
-    expiresIn: '7d'
-  });
+  return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' });
 }
 
-// // User operations
-// function registerUser(data) {
-//   const db = getDB();
-//   const id = generateId();
-//   const passwordHash = hashPassword(data.password);
+// ---------------------------------------------------------------------------
+// Public schema is the single place LawTech writes to. Every query scopes
+// through it so future RLS policies (auth.users / profiles) slot in cleanly.
+// ---------------------------------------------------------------------------
 
-//   const info = db.prepare(`
-//     INSERT INTO users (id, email, password_hash, name, role, phone)
-//     VALUES (?, ?, ?, ?, ?, ?)
-//   `).run(id, data.email, passwordHash, data.name, data.role || 'lawyer', data.phone);
+const SCHEMA = 'public';
 
-//   const user = db.prepare('SELECT id, email, name, role, phone, created_at FROM users WHERE id = ?')
-//     .get(id);
+// ---- users ------------------------------------------------------------------
 
-//   return user;
-// }
+async function ensureAdmin() {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', ADMIN_EMAIL)
+    .maybeSingle();
+  if (error) throw error;
+  if (data) return data.id;
 
-// function loginUser(data) {
-//   const db = getDB();
-//   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(data.email);
+  const hash = hashPassword(ADMIN_PASSWORD);
+  const { data: inserted, error: insErr } = await supabase
+    .from('users')
+    .insert([
+      {
+        id: generateId(),
+        email: ADMIN_EMAIL,
+        password_hash: hash,
+        name: ADMIN_NAME,
+        role: ADMIN_ROLE,
+        phone: '0400 000 000',
+      },
+    ])
+    .select()
+    .single();
+  if (insErr) throw insErr;
+  return inserted.id;
+}
 
-//   if (!user) {
-//     return { error: 'Invalid email or password' };
-//   }
+// ---- clients -----------------------------------------------------------------
 
-//   if (!verifyPassword(data.password, user.password_hash)) {
-//     return { error: 'Invalid email or password' };
-//   }
-
-//   const token = generateToken(user.id);
-//   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-//   db.prepare(`
-//     INSERT INTO sessions (id, user_id, token, expires_at, ip_address, user_agent)
-//     VALUES (?, ?, ?, ?, ?, ?)
-//   `).run(generateId(), user.id, token, expiresAt, data.ip, data.userAgent);
-
-//   const { password_hash, ...userWithoutHash } = user;
-//   return { ...userWithoutHash, token };
-// }
-
-// function getUsers(search) {
-//   const db = getDB();
-//   if (search) {
-//     return db.prepare('SELECT id, email, name, role, phone, created_at FROM users WHERE name LIKE ? OR email LIKE ? ORDER BY name')
-//       .all(`%${search}%`, `%${search}%`);
-//   }
-//   return db.prepare('SELECT id, email, name, role, phone, created_at FROM users ORDER BY name').all();
-// }
-
-// Client operations
-function getClients(search) {
-  const db = getDB();
+async function getClients(search = '') {
+  const q = supabase
+    .from('clients')
+    .select('*')
+    .order('name');
   if (search) {
-    return db.prepare('SELECT * FROM clients WHERE name LIKE ? OR email LIKE ? OR company LIKE ? ORDER BY name')
-      .all(`%${search}%`, `%${search}%`, `%${search}%`);
+    const like = `%${search}%`;
+    q.or(`name.ilike.*${like},email.ilike.*${like},company.ilike.*${like}`);
   }
-  return db.prepare('SELECT * FROM clients ORDER BY name').all();
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
 }
 
-function getClient(id) {
-  const db = getDB();
-  return db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
-}
-
-function createClient(data) {
-  const db = getDB();
-  const id = generateId();
-
-  const info = db.prepare(`
-    INSERT INTO clients (id, name, email, phone, company, address, city, state, zip_code, country, website, industry, contact_person, tier, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id, data.name, data.email, data.phone, data.company, data.address, data.city, data.state,
-    data.zipCode, data.country, data.website, data.industry, data.contactPerson, data.tier, data.notes
-  );
-
-  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
-
-  // Audit log
-  logAudit(id, 'CREATE', 'client', client.id, null, JSON.stringify(client), null, null);
-
-  return client;
-}
-
-function updateClient(id, data) {
-  const db = getDB();
-  const existing = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
-
-  if (!existing) {
-    return null;
+async function getClient(id) {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
   }
+  return data;
+}
+
+async function createClientRow(data) {
+  const { data: inserted, error } = await supabase
+    .from('clients')
+    .insert([
+      {
+        id: generateId(),
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        company: data.company,
+        address: data.address,
+        city: data.city,
+        state: data.state,
+        zip_code: data.zipCode,
+        country: data.country || 'Australia',
+        website: data.website,
+        industry: data.industry,
+        contact_person: data.contactPerson,
+        tier: data.tier || 'standard',
+        notes: data.notes,
+      },
+    ])
+    .select()
+    .single();
+  if (error) throw error;
+  logAudit(inserted.id, 'CREATE', 'client', inserted.id, null, JSON.stringify(inserted), null, null);
+  return inserted;
+}
+
+async function updateClient(id, data) {
+  const { data: existing } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (!existing) return null;
 
   const updates = [];
   const values = [];
@@ -342,101 +165,106 @@ function updateClient(id, data) {
       values.push(data[key]);
     }
   }
-  values.push(id);
+  if (updates.length === 0) return existing;
 
-  if (updates.length === 0) {
-    return existing;
-  }
+  const setClause = updates.join(', ');
+  const { data: updated, error } = await supabase
+    .from('clients')
+    .update([{ [setClause]: values.join(', ') }])
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
 
-  db.prepare(`UPDATE clients SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-    .run(...values);
-
-  const updated = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
-
-  // Audit log
-  logAudit(id, 'UPDATE', 'client', updated.id, JSON.stringify(existing), JSON.stringify(updated), null, null);
-
+  logAudit(updated.id, 'UPDATE', 'client', updated.id, JSON.stringify(existing), JSON.stringify(updated), null, null);
   return updated;
 }
 
-function deleteClient(id) {
-  const db = getDB();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
-
-  db.prepare('DELETE FROM clients WHERE id = ?').run(id);
-
-  if (client) {
-    logAudit(id, 'DELETE', 'client', client.id, JSON.stringify(client), null, null, null);
+async function deleteClient(id) {
+  const { data: existing } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (existing) {
+    logAudit(id, 'DELETE', 'client', id, JSON.stringify(existing), null, null, null);
   }
-
-  // Also delete related cases and documents
-  db.prepare('DELETE FROM cases WHERE client_id = ?').run(id);
-  db.prepare('DELETE FROM documents WHERE client_id = ?').run(id);
+  const { error } = await supabase.from('clients').delete().eq('id', id);
+  if (error) throw error;
 }
 
-// Case operations
-function getCases(clientId, search) {
-  const db = getDB();
-  let query = `
-    SELECT c.*, cl.name as client_name, cl.email as client_email
-    FROM cases c
-    LEFT JOIN clients cl ON c.client_id = cl.id
-  `;
-  const params = [];
+// ---- cases -------------------------------------------------------------------
 
+async function getCases(clientId = '', search = '') {
+  let query = supabase
+    .from('cases')
+    .select(`
+      *,
+      clients!inner(name, email)
+    `)
+    .order('created_at', { ascending: false });
   if (clientId) {
-    query += ' WHERE c.client_id = ?';
-    params.push(clientId);
+    query = query.eq('client_id', clientId);
   }
-
   if (search) {
-    query += (clientId ? ' AND' : ' WHERE') + ' (c.title LIKE ? OR c.description LIKE ? OR cl.name LIKE ?)';
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    const like = `%${search}%`;
+    query.or(`title.ilike.*${like},description.ilike.*${like},clients.name.ilike.*${like}`);
   }
-
-  query += ' ORDER BY c.created_at DESC';
-
-  return db.prepare(query).all(...params);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
 }
 
-function getCase(id) {
-  const db = getDB();
-  return db.prepare(`
-    SELECT c.*, cl.name as client_name, cl.email as client_email
-    FROM cases c
-    LEFT JOIN clients cl ON c.client_id = cl.id
-    WHERE c.id = ?
-  `).get(id);
-}
-
-function createCase(data) {
-  const db = getDB();
-  const id = generateId();
-
-  const info = db.prepare(`
-    INSERT INTO cases (id, client_id, matter_id, title, case_type, description, status, priority, filing_date, due_date, estimated_cost, actual_cost, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id, data.clientId, data.matterId, data.title, data.caseType, data.description,
-    data.status || 'open', data.priority || 'normal', data.filingDate, data.dueDate,
-    data.estimatedCost, data.actualCost, data.notes
-  );
-
-  const record = db.prepare('SELECT * FROM cases WHERE id = ?').get(id);
-
-  // Audit log
-  logAudit(id, 'CREATE', 'case', record.id, null, JSON.stringify(record), null, null);
-
-  return record;
-}
-
-function updateCase(id, data) {
-  const db = getDB();
-  const existing = db.prepare('SELECT * FROM cases WHERE id = ?').get(id);
-
-  if (!existing) {
-    return null;
+async function getCase(id) {
+  const { data, error } = await supabase
+    .from('cases')
+    .select(`
+      *,
+      clients!inner(name, email)
+    `)
+    .eq('id', id)
+    .single();
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
   }
+  return data;
+}
+
+async function createCase(data) {
+  const { data: inserted, error } = await supabase
+    .from('cases')
+    .insert([
+      {
+        id: generateId(),
+        client_id: data.clientId,
+        matter_id: data.matterId,
+        title: data.title,
+        case_type: data.caseType,
+        description: data.description,
+        status: data.status || 'open',
+        priority: data.priority || 'normal',
+        filing_date: data.filingDate,
+        due_date: data.dueDate,
+        estimated_cost: data.estimatedCost,
+        actual_cost: data.actualCost,
+        notes: data.notes,
+      },
+    ])
+    .select()
+    .single();
+  if (error) throw error;
+  logAudit(inserted.id, 'CREATE', 'case', inserted.id, null, JSON.stringify(inserted), null, null);
+  return inserted;
+}
+
+async function updateCase(id, data) {
+  const { data: existing } = await supabase
+    .from('cases')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (!existing) return null;
 
   const updates = [];
   const values = [];
@@ -446,78 +274,93 @@ function updateCase(id, data) {
       values.push(data[key]);
     }
   }
-  values.push(id);
+  if (updates.length === 0) return existing;
 
-  if (updates.length === 0) {
-    return existing;
-  }
+  const setClause = updates.join(', ');
+  const { data: updated, error } = await supabase
+    .from('cases')
+    .update([{ [setClause]: values.join(', ') }])
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
 
-  db.prepare(`UPDATE cases SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-    .run(...values);
-
-  const updated = db.prepare('SELECT * FROM cases WHERE id = ?').get(id);
-
-  // Audit log
-  logAudit(id, 'UPDATE', 'case', updated.id, JSON.stringify(existing), JSON.stringify(updated), null, null);
-
+  logAudit(updated.id, 'UPDATE', 'case', updated.id, JSON.stringify(existing), JSON.stringify(updated), null, null);
   return updated;
 }
 
-function deleteCase(id) {
-  const db = getDB();
-  const record = db.prepare('SELECT * FROM cases WHERE id = ?').get(id);
-
-  db.prepare('DELETE FROM cases WHERE id = ?').run(id);
-
-  if (record) {
-    logAudit(id, 'DELETE', 'case', record.id, JSON.stringify(record), null, null, null);
+async function deleteCase(id) {
+  const { data: existing } = await supabase
+    .from('cases')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (existing) {
+    logAudit(id, 'DELETE', 'case', id, JSON.stringify(existing), null, null, null);
   }
+  const { error } = await supabase.from('cases').delete().eq('id', id);
+  if (error) throw error;
 }
 
-// Matter operations
-function getMatters(search) {
-  const db = getDB();
+// ---- matters -----------------------------------------------------------------
+
+async function getMatters(search = '') {
+  const q = supabase.from('matters').select('*').order('title');
   if (search) {
-    return db.prepare(`
-      SELECT * FROM matters WHERE title LIKE ? OR description LIKE ? ORDER BY title
-    `).all(`%${search}%`, `%${search}%`);
+    const like = `%${search}%`;
+    q.or(`title.ilike.*${like},description.ilike.*${like}`);
   }
-  return db.prepare('SELECT * FROM matters ORDER BY title').all();
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
 }
 
-function getMatter(id) {
-  const db = getDB();
-  return db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
-}
-
-function createMatter(data) {
-  const db = getDB();
-  const id = generateId();
-
-  const info = db.prepare(`
-    INSERT INTO matters (id, client_id, title, matter_type, description, status, priority, filing_date, target_resolution, estimated_cost, actual_cost, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id, data.clientId, data.title, data.matterType, data.description,
-    data.status || 'open', data.priority || 'normal', data.filingDate,
-    data.targetResolution, data.estimatedCost, data.actualCost, data.notes
-  );
-
-  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
-
-  // Audit log
-  logAudit(id, 'CREATE', 'matter', matter.id, null, JSON.stringify(matter), null, null);
-
-  return matter;
-}
-
-function updateMatter(id, data) {
-  const db = getDB();
-  const existing = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
-
-  if (!existing) {
-    return null;
+async function getMatter(id) {
+  const { data, error } = await supabase
+    .from('matters')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
   }
+  return data;
+}
+
+async function createMatter(data) {
+  const { data: inserted, error } = await supabase
+    .from('matters')
+    .insert([
+      {
+        id: generateId(),
+        client_id: data.clientId,
+        title: data.title,
+        matter_type: data.matterType,
+        description: data.description,
+        status: data.status || 'open',
+        priority: data.priority || 'normal',
+        filing_date: data.filingDate,
+        target_resolution: data.targetResolution,
+        estimated_cost: data.estimatedCost,
+        actual_cost: data.actualCost,
+        notes: data.notes,
+      },
+    ])
+    .select()
+    .single();
+  if (error) throw error;
+  logAudit(inserted.id, 'CREATE', 'matter', inserted.id, null, JSON.stringify(inserted), null, null);
+  return inserted;
+}
+
+async function updateMatter(id, data) {
+  const { data: existing } = await supabase
+    .from('matters')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (!existing) return null;
 
   const updates = [];
   const values = [];
@@ -527,86 +370,95 @@ function updateMatter(id, data) {
       values.push(data[key]);
     }
   }
-  values.push(id);
+  if (updates.length === 0) return existing;
 
-  if (updates.length === 0) {
-    return existing;
-  }
+  const setClause = updates.join(', ');
+  const { data: updated, error } = await supabase
+    .from('matters')
+    .update([{ [setClause]: values.join(', ') }])
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
 
-  db.prepare(`UPDATE matters SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-    .run(...values);
-
-  const updated = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
-
-  // Audit log
-  logAudit(id, 'UPDATE', 'matter', updated.id, JSON.stringify(existing), JSON.stringify(updated), null, null);
-
+  logAudit(updated.id, 'UPDATE', 'matter', updated.id, JSON.stringify(existing), JSON.stringify(updated), null, null);
   return updated;
 }
 
-function deleteMatter(id) {
-  const db = getDB();
-  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
-
-  db.prepare('DELETE FROM matters WHERE id = ?').run(id);
-
-  if (matter) {
-    logAudit(id, 'DELETE', 'matter', matter.id, JSON.stringify(matter), null, null, null);
+async function deleteMatter(id) {
+  const { data: existing } = await supabase
+    .from('matters')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (existing) {
+    logAudit(id, 'DELETE', 'matter', id, JSON.stringify(existing), null, null, null);
   }
+  const { error } = await supabase.from('matters').delete().eq('id', id);
+  if (error) throw error;
 }
 
-// Article (knowledgebase) operations
-function getArticles(category, search) {
-  const db = getDB();
-  let query = 'SELECT * FROM articles WHERE status = ?';
-  const params = ['published'];
+// ---- articles (knowledgebase) ----------------------------------------------------
 
+async function getArticles(category = '', search = '') {
+  let query = supabase
+    .from('articles')
+    .select('*')
+    .eq('status', 'published')
+    .order('updated_at', { ascending: false });
   if (category) {
-    query += ' AND category = ?';
-    params.push(category);
+    query = query.eq('category', category);
   }
-
   if (search) {
-    query += ' AND (title LIKE ? OR content LIKE ? OR tags LIKE ?)';
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    const like = `%${search}%`;
+    query.or(`title.ilike.*${like},content.ilike.*${like},tags.ilike.*${like}`);
   }
-
-  query += ' ORDER BY updated_at DESC';
-
-  return db.prepare(query).all(...params);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
 }
 
-function getArticle(id) {
-  const db = getDB();
-  return db.prepare('SELECT * FROM articles WHERE id = ?').get(id);
-}
-
-function createArticle(data) {
-  const db = getDB();
-  const id = generateId();
-
-  const info = db.prepare(`
-    INSERT INTO articles (id, title, category, content, tags, author_id, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id, data.title, data.category, data.content, data.tags, data.authorId, data.status || 'published'
-  );
-
-  const article = db.prepare('SELECT * FROM articles WHERE id = ?').get(id);
-
-  // Audit log
-  logAudit(id, 'CREATE', 'article', article.id, null, JSON.stringify(article), null, null);
-
-  return article;
-}
-
-function updateArticle(id, data) {
-  const db = getDB();
-  const existing = db.prepare('SELECT * FROM articles WHERE id = ?').get(id);
-
-  if (!existing) {
-    return null;
+async function getArticle(id) {
+  const { data, error } = await supabase
+    .from('articles')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
   }
+  return data;
+}
+
+async function createArticle(data) {
+  const { data: inserted, error } = await supabase
+    .from('articles')
+    .insert([
+      {
+        id: generateId(),
+        title: data.title,
+        category: data.category,
+        content: data.content,
+        tags: data.tags,
+        author_id: data.authorId,
+        status: data.status || 'published',
+      },
+    ])
+    .select()
+    .single();
+  if (error) throw error;
+  logAudit(inserted.id, 'CREATE', 'article', inserted.id, null, JSON.stringify(inserted), null, null);
+  return inserted;
+}
+
+async function updateArticle(id, data) {
+  const { data: existing } = await supabase
+    .from('articles')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (!existing) return null;
 
   const updates = [];
   const values = [];
@@ -616,86 +468,101 @@ function updateArticle(id, data) {
       values.push(data[key]);
     }
   }
-  values.push(id);
+  if (updates.length === 0) return existing;
 
-  if (updates.length === 0) {
-    return existing;
-  }
+  const setClause = updates.join(', ');
+  const { data: updated, error } = await supabase
+    .from('articles')
+    .update([{ [setClause]: values.join(', ') }])
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
 
-  db.prepare(`UPDATE articles SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-    .run(...values);
-
-  const updated = db.prepare('SELECT * FROM articles WHERE id = ?').get(id);
-
-  // Audit log
-  logAudit(id, 'UPDATE', 'article', updated.id, JSON.stringify(existing), JSON.stringify(updated), null, null);
-
+  logAudit(updated.id, 'UPDATE', 'article', updated.id, JSON.stringify(existing), JSON.stringify(updated), null, null);
   return updated;
 }
 
-function deleteArticle(id) {
-  const db = getDB();
-  const article = db.prepare('SELECT * FROM articles WHERE id = ?').get(id);
-
-  db.prepare('DELETE FROM articles WHERE id = ?').run(id);
-
-  if (article) {
-    logAudit(id, 'DELETE', 'article', article.id, JSON.stringify(article), null, null, null);
+async function deleteArticle(id) {
+  const { data: existing } = await supabase
+    .from('articles')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (existing) {
+    logAudit(id, 'DELETE', 'article', id, JSON.stringify(existing), null, null, null);
   }
+  const { error } = await supabase.from('articles').delete().eq('id', id);
+  if (error) throw error;
 }
 
-// Document operations
-function getDocuments(search) {
-  const db = getDB();
+// ---- documents -----------------------------------------------------------------
+
+async function getDocuments(search = '') {
+  let query = supabase
+    .from('documents')
+    .select(`
+      *,
+      clients!inner(name, company)
+    `)
+    .order('uploaded_at', { ascending: false });
   if (search) {
-    return db.prepare(`
-      SELECT d.*, cl.name as client_name, cl.company
-      FROM documents d
-      LEFT JOIN clients cl ON d.client_id = cl.id
-      WHERE d.title LIKE ? OR d.document_type LIKE ? OR cl.name LIKE ?
-      ORDER BY d.uploaded_at DESC
-    `).all(`%${search}%`, `%${search}%`, `%${search}%`);
+    const like = `%${search}%`;
+    query.or(`title.ilike.*${like},document_type.ilike.*${like},clients.name.ilike.*${like}`);
   }
-  return db.prepare(`
-    SELECT d.*, cl.name as client_name, cl.company
-    FROM documents d
-    LEFT JOIN clients cl ON d.client_id = cl.id
-    ORDER BY d.uploaded_at DESC
-  `).all();
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
 }
 
-function getDocument(id) {
-  const db = getDB();
-  return db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
-}
-
-function createDocument(data) {
-  const db = getDB();
-  const id = generateId();
-
-  const info = db.prepare(`
-    INSERT INTO documents (id, client_id, matter_id, title, document_type, file_path, file_name, file_size, mime_type, uploaded_by, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id, data.clientId, data.matterId, data.title, data.documentType,
-    data.filePath, data.fileName, data.fileSize, data.mimeType, data.uploadedBy, data.status || 'active'
-  );
-
-  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
-
-  // Audit log
-  logAudit(id, 'CREATE', 'document', doc.id, null, JSON.stringify(doc), null, null);
-
-  return doc;
-}
-
-function updateDocument(id, data) {
-  const db = getDB();
-  const existing = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
-
-  if (!existing) {
-    return null;
+async function getDocument(id) {
+  const { data, error } = await supabase
+    .from('documents')
+    .select(`
+      *,
+      clients!inner(name, company)
+    `)
+    .eq('id', id)
+    .single();
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
   }
+  return data;
+}
+
+async function createDocument(data) {
+  const { data: inserted, error } = await supabase
+    .from('documents')
+    .insert([
+      {
+        id: generateId(),
+        client_id: data.clientId,
+        matter_id: data.matterId,
+        title: data.title,
+        document_type: data.documentType,
+        file_path: data.filePath,
+        file_name: data.fileName,
+        file_size: data.fileSize,
+        mime_type: data.mimeType,
+        uploaded_by: data.uploadedBy,
+        status: data.status || 'active',
+      },
+    ])
+    .select()
+    .single();
+  if (error) throw error;
+  logAudit(inserted.id, 'CREATE', 'document', inserted.id, null, JSON.stringify(inserted), null, null);
+  return inserted;
+}
+
+async function updateDocument(id, data) {
+  const { data: existing } = await supabase
+    .from('documents')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (!existing) return null;
 
   const updates = [];
   const values = [];
@@ -705,80 +572,115 @@ function updateDocument(id, data) {
       values.push(data[key]);
     }
   }
-  values.push(id);
+  if (updates.length === 0) return existing;
 
-  if (updates.length === 0) {
-    return existing;
-  }
+  const setClause = updates.join(', ');
+  const { data: updated, error } = await supabase
+    .from('documents')
+    .update([{ [setClause]: values.join(', ') }])
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
 
-  db.prepare(`UPDATE documents SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-    .run(...values);
-
-  const updated = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
-
-  // Audit log
-  logAudit(id, 'UPDATE', 'document', updated.id, JSON.stringify(existing), JSON.stringify(updated), null, null);
-
+  logAudit(updated.id, 'UPDATE', 'document', updated.id, JSON.stringify(existing), JSON.stringify(updated), null, null);
   return updated;
 }
 
-function deleteDocument(id) {
-  const db = getDB();
-  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
-
-  db.prepare('DELETE FROM documents WHERE id = ?').run(id);
-
-  if (doc) {
-    logAudit(id, 'DELETE', 'document', doc.id, JSON.stringify(doc), null, null, null);
+async function deleteDocument(id) {
+  const { data: existing } = await supabase
+    .from('documents')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (existing) {
+    logAudit(id, 'DELETE', 'document', id, JSON.stringify(existing), null, null, null);
   }
+  const { error } = await supabase.from('documents').delete().eq('id', id);
+  if (error) throw error;
 }
 
-// Document version history
-function getDocumentVersions(documentId) {
-  const db = getDB();
-  return db.prepare('SELECT * FROM document_versions WHERE document_id = ? ORDER BY version_number DESC').all(documentId);
+// ---- document versions -----------------------------------------------------------
+
+async function getDocumentVersions(documentId) {
+  const { data, error } = await supabase
+    .from('document_versions')
+    .select('*')
+    .eq('document_id', documentId)
+    .order('version_number', { ascending: false });
+  if (error) throw error;
+  return data || [];
 }
 
-function addDocumentVersion(documentId, data) {
-  const db = getDB();
-  const versions = getDocumentVersions(documentId);
+async function addDocumentVersion(documentId, data) {
+  const versions = await getDocumentVersions(documentId);
   const versionNumber = versions.length > 0 ? versions[0].version_number + 1 : 1;
-
-  const info = db.prepare(`
-    INSERT INTO document_versions (id, document_id, version_number, content, file_path, file_name, file_size, mime_type, changed_by, changed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    generateId(), documentId, versionNumber, data.content, data.filePath, data.fileName,
-    data.fileSize, data.mimeType, data.changedBy, new Date().toISOString()
-  );
-
-  return db.prepare('SELECT * FROM document_versions WHERE id = ?').get(info.lastInsertRowid);
+  const { data: inserted, error } = await supabase
+    .from('document_versions')
+    .insert([
+      {
+        id: generateId(),
+        document_id: documentId,
+        version_number: versionNumber,
+        content: data.content,
+        file_path: data.filePath,
+        file_name: data.fileName,
+        file_size: data.fileSize,
+        mime_type: data.mimeType,
+        changed_by: data.changedBy,
+        changed_at: new Date().toISOString(),
+      },
+    ])
+    .select()
+    .single();
+  if (error) throw error;
+  return inserted;
 }
 
-// Audit log
-function logAudit(userId, action, entityType, entityId, oldValues, newValues, ipAddress, userAgent) {
-  const db = getDB();
-  db.prepare(`
-    INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, old_values, new_values, ip_address, user_agent)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(generateId(), userId, action, entityType, entityId, oldValues, newValues, ipAddress, userAgent);
+// ---- audit log --------------------------------------------------------------------
+
+async function logAudit(userId, action, entityType, entityId, oldValues, newValues, ipAddress, userAgent) {
+  await supabase.from('audit_log').insert([
+    {
+      id: generateId(),
+      user_id: userId,
+      action,
+      entity_type: entityType,
+      entity_id: entityId,
+      old_values: oldValues,
+      new_values: newValues,
+      ip_address: ipAddress,
+      user_agent: userAgent,
+    },
+  ]);
 }
 
-// Visitor (guest) access
-function getVisitor(id) {
-  const db = getDB();
-  return db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
+// ---- visitor (guest) access ----------------------------------------------------------
+
+async function getVisitor(id) {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
+  }
+  return data;
 }
 
 module.exports = {
-  init,
-  getDB,
-  // registerUser,
-  // loginUser,
-  // getUsers,
+  init() {
+    // No-op: Supabase is connectionless. ensureAdmin() seeds on first access.
+  },
+  generateId,
+  hashPassword,
+  verifyPassword,
+  generateToken,
   getClients,
   getClient,
-  createClient,
+  createClientRow,
   updateClient,
   deleteClient,
   getCases,
@@ -804,8 +706,5 @@ module.exports = {
   getDocumentVersions,
   addDocumentVersion,
   getVisitor,
-  // hashPassword,
-  // verifyPassword,
-  // generateToken,
-  generateId,
+  ensureAdmin,
 };
