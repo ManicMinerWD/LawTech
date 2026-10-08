@@ -1,43 +1,21 @@
--- LawTech - Supabase Postgres schema
--- Migration to migrate LawTech from SQLite to Postgres.
--- Apply in Supabase Dashboard -> SQL Editor -> New query -> Run.
--- pragma journal_mode=WAL (SQLite) is not valid in Postgres.
--- We generate ids via crypto.randomUUID() in app code, so no serial/autoincrement.
---
--- Ordering:
---   1. ids + table skeletons
---   2. indexes
---   3. FK constraints
---   4. seed admin + demo data (optional, only if you seed manually)
---
--- NOTE: RLS off for the write surface. If you later enable RLS, the public
--- schema here is the single place `database.js` writes to; add policies on
--- `public.users`, `public.clients`, `public.cases`, `public.matters`,
--- `public.articles`, `public.documents`, `public.audit_log` as needed.
---
--- pragma foreign_keys = ON is what SQLite uses; Postgres always enforces FKs.
+CREATE SCHEMA IF NOT EXISTS public;
 
--- ============================================================================
--- Schema version: 1
--- ============================================================================
-
--- ---- users (login / roles) ----
--- key: email
-create table if not exists public.users (
-  id         uuid primary key,
-  email      text unique not null,
-  password_hash text not null,
-  name       text not null,
-  role       text default 'lawyer' not null,
-  phone      text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+-- users
+CREATE TABLE IF NOT EXISTS public.users (
+  id            uuid PRIMARY KEY,
+  email         text UNIQUE NOT NULL,
+  password_hash text NOT NULL,
+  name          text NOT NULL,
+  role          text NOT NULL DEFAULT 'lawyer',
+  phone         text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
--- ---- clients ----
-create table if not exists public.clients (
-  id          uuid primary key,
-  name        text not null,
+-- clients
+CREATE TABLE IF NOT EXISTS public.clients (
+  id          uuid PRIMARY KEY,
+  name        text NOT NULL,
   email       text,
   phone       text,
   company     text,
@@ -45,164 +23,146 @@ create table if not exists public.clients (
   city        text,
   state       text,
   zip_code    text,
-  country     text default 'Australia',
+  country     text NOT NULL DEFAULT 'Australia',
   website     text,
   industry    text,
   contact_person text,
-  tier        text default 'standard',
+  tier        text NOT NULL DEFAULT 'standard',
   notes       text,
-  created_at  timestamptz default now(),
-  updated_at  timestamptz default now()
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- ---- matters ----
-create table if not exists public.matters (
-  id                uuid primary key,
-  client_id         uuid not null references public.clients(id) on delete cascade,
-  title             text not null,
+-- matters
+CREATE TABLE IF NOT EXISTS public.matters (
+  id                uuid PRIMARY KEY,
+  client_id         uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  title             text NOT NULL,
   matter_type       text,
   description       text,
-  status            text default 'open',
-  priority          text default 'normal',
+  status            text NOT NULL DEFAULT 'open',
+  priority          text NOT NULL DEFAULT 'normal',
   filing_date       date,
   target_resolution date,
   estimated_cost    real,
   actual_cost       real,
   notes             text,
-  created_at        timestamptz default now(),
-  updated_at        timestamptz default now()
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now()
 );
 
--- ---- cases ----
-create table if not exists public.cases (
-  id                uuid primary key,
-  client_id         uuid not null references public.clients(id) on delete cascade,
-  matter_id         uuid references public.matters(id) on delete set null,
-  title             text not null,
+-- cases
+CREATE TABLE IF NOT EXISTS public.cases (
+  id                uuid PRIMARY KEY,
+  client_id         uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  matter_id         uuid REFERENCES public.matters(id) ON DELETE SET NULL,
+  title             text NOT NULL,
   case_type         text,
   description       text,
-  status            text default 'open',
-  priority          text default 'normal',
+  status            text NOT NULL DEFAULT 'open',
+  priority          text NOT NULL DEFAULT 'normal',
   filing_date       date,
   due_date          date,
   estimated_cost    real,
   actual_cost       real,
   notes             text,
-  created_at        timestamptz default now(),
-  updated_at        timestamptz default now()
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now()
 );
 
--- ---- articles -------------------------------------------------
-create table if not exists public.articles (
-  id          uuid primary key,
-  title       text not null,
+-- articles
+CREATE TABLE IF NOT EXISTS public.articles (
+  id          uuid PRIMARY KEY,
+  title       text NOT NULL,
   category    text,
-  content     text not null,
+  content     text NOT NULL,
   tags        text,
-  author_id   uuid references public.users(id) on delete set null,
-  views       integer default 0,
-  status      text default 'published',
-  created_at  timestamptz default now(),
-  updated_at  timestamptz default now()
+  author_id   uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  views       integer NOT NULL DEFAULT 0,
+  status      text NOT NULL DEFAULT 'published',
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- ---- documents -------------------------------------------------
-create table if not exists public.documents (
-  id           uuid primary key,
-  client_id    uuid references public.clients(id) on delete set null,
-  matter_id    uuid references public.matters(id) on delete set null,
-  title        text not null,
+-- documents
+CREATE TABLE IF NOT EXISTS public.documents (
+  id            uuid PRIMARY KEY,
+  client_id     uuid REFERENCES public.clients(id) ON DELETE SET NULL,
+  matter_id     uuid REFERENCES public.matters(id) ON DELETE SET NULL,
+  title         text NOT NULL,
   document_type text,
-  file_path    text,
-  file_name    text,
-  file_size    bigint,
-  mime_type    text,
-  uploaded_by  text,
-  status       text default 'active',
-  uploaded_at  timestamptz default now(),
-  created_at   timestamptz default now(),
-  updated_at   timestamptz default now()
+  file_path     text,
+  file_name     text,
+  file_size     bigint,
+  mime_type     text,
+  uploaded_by   text,
+  status        text NOT NULL DEFAULT 'active',
+  uploaded_at   timestamptz NOT NULL DEFAULT now(),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
--- ---- document_versions -------------------------------------------
-create table if not exists public.document_versions (
-  id            uuid primary key,
-  document_id   uuid not null references public.documents(id) on delete cascade,
-  version_number integer default 1,
+-- document_versions
+CREATE TABLE IF NOT EXISTS public.document_versions (
+  id            uuid PRIMARY KEY,
+  document_id   uuid NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
+  version_number integer NOT NULL DEFAULT 1,
   content       text,
   file_path     text,
   file_name     text,
   file_size     bigint,
   mime_type     text,
   changed_by    text,
-  changed_at    timestamptz default now()
+  changed_at    timestamptz NOT NULL DEFAULT now()
 );
 
--- ---- audit_log (append-only) ---------------------------------------
-create table if not exists public.audit_log (
-  id           uuid primary key,
-  user_id      uuid references public.users(id) on delete set null,
-  action       text not null,
-  entity_type  text not null,
-  entity_id    text not null,
-  old_values   text,
-  new_values   text,
-  ip_address   text,
-  user_agent   text,
-  created_at   timestamptz default now()
+-- audit_log
+CREATE TABLE IF NOT EXISTS public.audit_log (
+  id            uuid PRIMARY KEY,
+  user_id       uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  action        text NOT NULL,
+  entity_type   text NOT NULL,
+  entity_id     text NOT NULL,
+  old_values    text,
+  new_values    text,
+  ip_address    text,
+  user_agent    text,
+  created_at    timestamptz NOT NULL DEFAULT now()
 );
 
--- ---- sessions (auth) ---------------------------------------------
-create table if not exists public.sessions (
-  id         uuid primary key,
-  user_id    uuid not null references public.users(id) on delete cascade,
-  token      text unique not null,
-  expires_at timestamptz not null,
+-- sessions
+CREATE TABLE IF NOT EXISTS public.sessions (
+  id         uuid PRIMARY KEY,
+  user_id    uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  token      text UNIQUE NOT NULL,
+  expires_at timestamptz NOT NULL,
   ip_address text,
   user_agent text,
-  created_at timestamptz default now()
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- ---- indexes (additional) -------------------------------------------
-create index if not exists idx_clients_name on public.clients using btree (lower(name));
-create index if not exists idx_clients_email on public.clients using btree (lower(email));
-create index if not exists idx_matters_client_id on public.matters using btree (client_id);
-create index if not exists idx_matters_title on public.matters using btree (lower(title));
-create index if not exists idx_cases_client_id on public.cases using btree (client_id);
-create index if not exists idx_cases_matter_id on public.cases using btree (matter_id);
-create index if not exists idx_cases_title on public.cases using btree (lower(title));
-create index if not exists idx_articles_author_id on public.articles using btree (author_id);
-create index if not exists idx_documents_client_id on public.documents using btree (client_id);
-create index if not exists idx_documents_title on public.documents using btree (lower(title));
-create index if not exists idx_document_versions_document_id on public.document_versions using btree (document_id);
-create index if not exists idx_audit_log_entity on public.audit_log using btree (entity_type, entity_id);
-create index if not exists idx_sessions_user_id on public.sessions using btree (user_id);
+-- indexes
+CREATE INDEX IF NOT EXISTS idx_clients_name ON public.clients USING btree (lower(name));
+CREATE INDEX IF NOT EXISTS idx_clients_email ON public.clients USING btree (lower(email));
+CREATE INDEX IF NOT EXISTS idx_matters_client_id ON public.matters USING btree (client_id);
+CREATE INDEX IF NOT EXISTS idx_matters_title ON public.matters USING btree (lower(title));
+CREATE INDEX IF NOT EXISTS idx_cases_client_id ON public.cases USING btree (client_id);
+CREATE INDEX IF NOT EXISTS idx_cases_matter_id ON public.cases USING btree (matter_id);
+CREATE INDEX IF NOT EXISTS idx_cases_title ON public.cases USING btree (lower(title));
+CREATE INDEX IF NOT EXISTS idx_articles_author_id ON public.articles USING btree (author_id);
+CREATE INDEX IF NOT EXISTS idx_documents_client_id ON public.documents USING btree (client_id);
+CREATE INDEX IF NOT EXISTS idx_documents_title ON public.documents USING btree (lower(title));
+CREATE INDEX IF NOT EXISTS idx_document_versions_document_id ON public.document_versions USING btree (document_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON public.audit_log USING btree (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON public.sessions USING btree (user_id);
 
--- ---- FK constraints (second pass so all tables exist) -------------------
-alter table if exists public.cases
-  add constraint fk_cases_client foreign key (client_id) references public.clients(id) on delete cascade;
-
-alter table if exists public.cases
-  add constraint fk_cases_matter foreign key (matter_id) references public.matters(id) on delete set null;
-
-alter table if exists public.matters
-  add constraint fk_matters_client foreign key (client_id) references public.clients(id) on delete cascade;
-
-alter table if exists public.articles
-  add constraint fk_articles_author foreign key (author_id) references public.users(id) on delete set null;
-
-alter table if exists public.documents
-  add constraint fk_documents_client foreign key (client_id) references public.clients(id) on delete set null;
-
-alter table if exists public.documents
-  add constraint fk_documents_matter foreign key (matter_id) references public.matters(id) on delete set null;
-
-alter table if exists public.document_versions
-  add constraint fk_document_versions_document foreign key (document_id) references public.documents(id) on delete cascade;
-
-alter table if exists public.audit_log
-  add constraint fk_audit_log_user foreign key (user_id) references public.users(id) on delete set null;
-
-alter table if exists public.sessions
-  add constraint fk_sessions_user foreign key (user_id) references public.users(id) on delete cascade;
-
+-- FKs (explicit, in case CREATE TABLE did not attach them)
+ALTER TABLE IF EXISTS public.cases    ADD CONSTRAINT fk_cases_client FOREIGN KEY (client_id)    REFERENCES public.clients(id) ON DELETE CASCADE;
+ALTER TABLE IF EXISTS public.cases    ADD CONSTRAINT fk_cases_matter  FOREIGN KEY (matter_id)   REFERENCES public.matters(id) ON DELETE SET NULL;
+ALTER TABLE IF EXISTS public.matters  ADD CONSTRAINT fk_matters_client FOREIGN KEY (client_id)  REFERENCES public.clients(id) ON DELETE CASCADE;
+ALTER TABLE IF EXISTS public.articles ADD CONSTRAINT fk_articles_author FOREIGN KEY (author_id) REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE IF EXISTS public.documents ADD CONSTRAINT fk_documents_client FOREIGN KEY (client_id) REFERENCES public.clients(id) ON DELETE SET NULL;
+ALTER TABLE IF EXISTS public.documents ADD CONSTRAINT fk_documents_matter  FOREIGN KEY (matter_id) REFERENCES public.matters(id) ON DELETE SET NULL;
+ALTER TABLE IF EXISTS public.document_versions ADD CONSTRAINT fk_document_versions_document FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+ALTER TABLE IF EXISTS public.audit_log    ADD CONSTRAINT fk_audit_log_user    FOREIGN KEY (user_id)   REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE IF EXISTS public.sessions     ADD CONSTRAINT fk_sessions_user     FOREIGN KEY (user_id)   REFERENCES public.users(id) ON DELETE CASCADE;
